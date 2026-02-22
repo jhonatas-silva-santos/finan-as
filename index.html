@@ -1,0 +1,597 @@
+<!DOCTYPE html>
+<html lang="pt-pt">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CashFlow IQ - Fluxo de Caixa Inteligente</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- Firebase SDKs -->
+    <script src="https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js" type="module"></script>
+    <script src="https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js" type="module"></script>
+    <script src="https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js" type="module"></script>
+
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800;900&display=swap');
+        body { font-family: 'Inter', sans-serif; }
+        .tab-active { color: #4f46e5; }
+        .tab-inactive { color: #94a3b8; }
+        .modal-open { overflow: hidden; }
+        [x-cloak] { display: none !important; }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-900 pb-24">
+
+    <!-- Header -->
+    <header class="bg-white border-b border-slate-100 sticky top-0 z-30 shadow-sm">
+        <div class="max-w-4xl mx-auto px-4 h-16 flex justify-between items-center gap-4">
+            <div class="flex items-center gap-2 shrink-0">
+                <div class="w-9 h-9 bg-indigo-600 rounded-lg flex items-center justify-center text-white">
+                    <i data-lucide="trending-up" class="w-5 h-5"></i>
+                </div>
+                <h1 class="text-lg font-black text-slate-800 tracking-tight hidden sm:block">CASH<span class="text-indigo-600">IQ</span></h1>
+            </div>
+
+            <div class="flex-1 relative max-w-md">
+                <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4"></i>
+                <input id="searchInput" class="w-full bg-slate-100 border-none rounded-full py-2 pl-10 pr-4 text-sm focus:ring-2 focus:ring-indigo-500/20 outline-none" placeholder="Pesquisar...">
+            </div>
+
+            <div class="flex items-center gap-2">
+                <button onclick="toggleFilters()" id="filterBtn" class="p-2 rounded-lg text-slate-400 relative">
+                    <i data-lucide="filter" class="w-5 h-5"></i>
+                    <span id="filterBadge" class="hidden absolute top-1 right-1 w-2 h-2 bg-rose-500 rounded-full border-2 border-white"></span>
+                </button>
+                <button onclick="exportToCSV()" class="p-2 text-slate-400 hover:text-emerald-600 rounded-lg transition-colors">
+                    <i data-lucide="download" class="w-5 h-5"></i>
+                </button>
+                <button onclick="openImportModal()" class="p-2 text-slate-400 hover:text-indigo-600 rounded-lg transition-colors">
+                    <i data-lucide="upload" class="w-5 h-5"></i>
+                </button>
+            </div>
+        </div>
+
+        <!-- Filtros Expansíveis -->
+        <div id="filterBar" class="hidden bg-white border-b border-slate-100 transition-all overflow-hidden p-4">
+            <div class="max-w-4xl mx-auto space-y-4">
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <div>
+                        <label class="text-[10px] font-bold text-slate-400 uppercase mb-1 block">Método</label>
+                        <select id="filterMethod" onchange="updateFilters()" class="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg text-sm">
+                            <option value="todos">Todos</option>
+                            <option value="Pix">PIX</option>
+                            <option value="Crédito">Crédito</option>
+                            <option value="Débito">Débito</option>
+                            <option value="Dinheiro">Dinheiro</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="text-[10px] font-bold text-slate-400 uppercase mb-1 block">Carteira</label>
+                        <select id="filterWallet" onchange="updateFilters()" class="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg text-sm">
+                            <option value="todas">Todas</option>
+                        </select>
+                    </div>
+                    <div class="lg:col-span-2">
+                        <label class="text-[10px] font-bold text-slate-400 uppercase mb-1 block">Período</label>
+                        <div class="flex gap-2">
+                            <select id="filterPeriod" onchange="togglePeriodInputs()" class="flex-1 p-2 bg-slate-50 border border-slate-200 rounded-lg text-sm">
+                                <option value="mes_atual">Mês Atual</option>
+                                <option value="hoje">Hoje</option>
+                                <option value="7dias">7 Dias</option>
+                                <option value="personalizado">Personalizado 📅</option>
+                                <option value="todos">Tudo</option>
+                            </select>
+                            <div id="periodInputs" class="hidden flex gap-2 items-center animate-in fade-in slide-in-from-left-2 duration-300">
+                                <input type="date" id="filterStartDate" onchange="updateFilters()" class="p-1.5 bg-white border border-slate-200 rounded-lg text-xs">
+                                <input type="date" id="filterEndDate" onchange="updateFilters()" class="p-1.5 bg-white border border-slate-200 rounded-lg text-xs">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="flex justify-end pt-2 border-t border-slate-50">
+                    <button onclick="resetFilters()" class="text-xs text-rose-500 font-bold hover:underline">Limpar Filtros</button>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <main id="mainContent" class="max-w-4xl mx-auto px-4 pt-6">
+        <!-- Dashboard (Default) -->
+        <div id="view-dashboard" class="space-y-6">
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+                    <p class="text-xs font-bold text-slate-400 uppercase mb-1">Saldo em Conta</p>
+                    <h3 id="stat-saldo" class="text-2xl font-black text-slate-800">€ 0,00</h3>
+                </div>
+                <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+                    <p class="text-xs font-bold text-slate-400 uppercase mb-1">Fatura do Mês</p>
+                    <h3 id="stat-fatura" class="text-2xl font-black text-orange-600">€ 0,00</h3>
+                </div>
+                <div class="bg-slate-900 p-6 rounded-2xl shadow-lg border border-slate-800">
+                    <p class="text-xs font-bold text-slate-400 uppercase mb-1">Saldo Projetado</p>
+                    <h3 id="stat-projetado" class="text-2xl font-black text-emerald-400">€ 0,00</h3>
+                </div>
+            </div>
+
+            <div class="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+                <div class="p-4 border-b border-slate-50 flex justify-between items-center">
+                   <h4 class="font-bold text-slate-800">Movimentações Recentes</h4>
+                   <button onclick="setTab('extrato')" class="text-xs font-bold text-indigo-600">Ver Tudo</button>
+                </div>
+                <div id="recentTransactionsList" class="divide-y divide-slate-50">
+                   <!-- Recent items -->
+                </div>
+            </div>
+        </div>
+
+        <!-- Extrato -->
+        <div id="view-extrato" class="hidden space-y-4">
+            <div id="transactionsList" class="bg-white rounded-2xl shadow-sm border border-slate-100 divide-y divide-slate-50">
+                <!-- Transactions items -->
+            </div>
+        </div>
+
+        <!-- Ajustes -->
+        <div id="view-config" class="hidden space-y-6">
+            <section class="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+                <h3 class="font-bold text-slate-800 mb-4 flex items-center gap-2">
+                    <i data-lucide="wallet" class="w-4 h-4 text-indigo-500"></i> Minhas Contas
+                </h3>
+                <div class="grid grid-cols-1 sm:grid-cols-4 gap-3 mb-6">
+                    <input id="walletName" placeholder="Nome" class="sm:col-span-2 p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm">
+                    <select id="walletType" class="p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold">
+                        <option>Conta Corrente</option>
+                        <option>Crédito</option>
+                        <option>Dinheiro</option>
+                    </select>
+                    <button onclick="addWallet()" class="bg-indigo-600 text-white font-bold p-3 rounded-xl text-sm">Adicionar</button>
+                </div>
+                <div id="walletList" class="grid grid-cols-1 sm:grid-cols-2 gap-3"></div>
+            </section>
+        </div>
+    </main>
+
+    <!-- Botão Flutuante -->
+    <button onclick="openModal()" class="fixed bottom-24 right-6 w-14 h-14 bg-indigo-600 text-white rounded-full shadow-2xl flex items-center justify-center hover:scale-110 active:scale-95 transition-all z-40">
+        <i data-lucide="plus" class="w-8 h-8"></i>
+    </button>
+
+    <!-- Bottom Nav -->
+    <nav class="fixed bottom-0 left-0 right-0 bg-white/90 backdrop-blur-md border-t border-slate-100 h-20 px-6 flex justify-around items-center z-30">
+        <button onclick="setTab('dashboard')" id="nav-dashboard" class="flex flex-col items-center gap-1 tab-active">
+            <i data-lucide="layout-dashboard" class="w-6 h-6"></i>
+            <span class="text-[10px] font-black uppercase tracking-widest">Painel</span>
+        </button>
+        <button onclick="setTab('extrato')" id="nav-extrato" class="flex flex-col items-center gap-1 tab-inactive">
+            <i data-lucide="list-ordered" class="w-6 h-6"></i>
+            <span class="text-[10px] font-black uppercase tracking-widest">Extrato</span>
+        </button>
+        <button onclick="setTab('config')" id="nav-config" class="flex flex-col items-center gap-1 tab-inactive">
+            <i data-lucide="settings" class="w-6 h-6"></i>
+            <span class="text-[10px] font-black uppercase tracking-widest">Ajustes</span>
+        </button>
+    </nav>
+
+    <!-- Modal Novo Lançamento -->
+    <div id="modalTransaction" class="hidden fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center">
+        <div class="bg-white w-full max-w-lg rounded-t-3xl sm:rounded-3xl shadow-2xl animate-in slide-in-from-bottom duration-300">
+            <div class="p-6 border-b border-slate-50 flex justify-between items-center">
+                <h3 class="text-xl font-black text-slate-800">Novo Lançamento</h3>
+                <button onclick="closeModal()" class="p-2 bg-slate-100 rounded-full"><i data-lucide="x" class="w-5 h-5"></i></button>
+            </div>
+            <div class="p-6 space-y-4">
+                <div class="grid grid-cols-2 gap-2 p-1 bg-slate-100 rounded-xl">
+                    <button id="typeSaida" onclick="setFormType('saida')" class="py-2 rounded-lg font-bold text-sm bg-white text-rose-600 shadow-sm">Gasto</button>
+                    <button id="typeEntrada" onclick="setFormType('entrada')" class="py-2 rounded-lg font-bold text-sm text-slate-500">Entrada</button>
+                </div>
+                <input id="formDesc" class="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-medium" placeholder="O que você comprou/recebeu?">
+                <div class="grid grid-cols-2 gap-4">
+                    <div class="bg-slate-50 p-3 rounded-2xl border border-slate-200">
+                        <label class="text-[10px] font-bold text-slate-400 uppercase block">Valor</label>
+                        <input id="formValue" type="number" step="0.01" class="bg-transparent w-full text-lg font-black outline-none" placeholder="0,00">
+                    </div>
+                    <div class="bg-slate-50 p-3 rounded-2xl border border-slate-200">
+                        <label class="text-[10px] font-bold text-slate-400 uppercase block">Data</label>
+                        <input id="formDate" type="date" class="bg-transparent w-full text-sm font-bold outline-none">
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-4">
+                    <select id="formMethod" class="p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold">
+                        <option>Pix</option>
+                        <option>Débito</option>
+                        <option>Crédito</option>
+                        <option>Dinheiro</option>
+                    </select>
+                    <select id="formWallet" class="p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold"></select>
+                </div>
+                <div class="bg-indigo-50 p-4 rounded-2xl flex items-center justify-between border border-indigo-100">
+                    <div>
+                        <h4 class="text-sm font-black text-indigo-900">Parcelar?</h4>
+                        <p class="text-[10px] text-indigo-600 font-bold">Dividir valor total.</p>
+                    </div>
+                    <input id="formInstallments" type="number" min="1" value="1" class="w-16 p-2 bg-white border border-indigo-200 rounded-xl text-center font-black text-indigo-600 outline-none">
+                </div>
+                <button onclick="saveTransaction()" class="w-full py-4 bg-indigo-600 text-white rounded-2xl font-black shadow-xl hover:bg-indigo-700 transition-all uppercase tracking-widest text-sm">Salvar Lançamento</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Importação -->
+    <div id="modalImport" class="hidden fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div class="bg-white w-full max-w-2xl rounded-3xl shadow-2xl flex flex-col max-h-[85vh]">
+            <div class="p-6 border-b border-slate-50 flex justify-between items-center">
+                <h3 class="text-xl font-black text-slate-800">Importação Inteligente</h3>
+                <button onclick="closeImportModal()" class="p-2 bg-slate-100 rounded-full"><i data-lucide="x" class="w-5 h-5"></i></button>
+            </div>
+            <div id="importContainer" class="p-6 flex-1 overflow-y-auto">
+                <div class="border-2 border-dashed border-slate-200 rounded-3xl p-12 text-center">
+                    <i data-lucide="file-text" class="mx-auto text-slate-200 mb-4 w-12 h-12"></i>
+                    <p class="text-sm font-bold text-slate-500 mb-4">Selecione o CSV do seu banco</p>
+                    <label class="bg-indigo-600 text-white px-6 py-3 rounded-xl font-bold text-sm cursor-pointer">
+                        Procurar Arquivo
+                        <input type="file" id="csvFileInput" accept=".csv" class="hidden" onchange="handleFileSelect(event)">
+                    </label>
+                </div>
+            </div>
+            <div id="importFooter" class="hidden p-6 border-t border-slate-50 bg-slate-50/50 flex justify-between items-center rounded-b-3xl">
+                <span id="importCount" class="text-xs font-black text-slate-500">0 itens</span>
+                <button onclick="saveImport()" class="bg-indigo-600 text-white px-6 py-3 rounded-xl font-black text-xs">SALVAR TUDO</button>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, addDoc, doc, updateDoc, deleteDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Firebase Setup
+        const firebaseConfig = JSON.parse(__firebase_config);
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-caixa';
+
+        // State
+        let wallets = [];
+        let categories = [];
+        let transactions = [];
+        let formType = 'saida';
+        let importData = [];
+
+        // App Init
+        async function init() {
+            if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                await signInWithCustomToken(auth, __initial_auth_token);
+            } else {
+                await signInAnonymously(auth);
+            }
+
+            onAuthStateChanged(auth, (user) => {
+                if (user) syncData();
+            });
+        }
+
+        function syncData() {
+            const basePath = `artifacts/${appId}/public/data`;
+            
+            onSnapshot(collection(db, basePath, 'wallets'), snapshot => {
+                wallets = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+                renderWallets();
+                updateSelects();
+            });
+
+            onSnapshot(collection(db, basePath, 'transactions'), snapshot => {
+                transactions = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+                render();
+            });
+
+            // Default categories if empty
+            categories = [{ id: '1', name: 'Geral', type: 'saida', limit: 1000 }];
+        }
+
+        // --- RENDER LOGIC ---
+        window.render = function() {
+            updateStats();
+            renderTransactionList();
+            renderRecentList();
+            lucide.createIcons();
+        };
+
+        function updateStats() {
+            const today = new Date();
+            let saldo = wallets.filter(w => w.type !== 'Crédito').reduce((acc, w) => acc + (parseFloat(w.initialBalance) || 0), 0);
+            let fatura = 0;
+
+            transactions.forEach(t => {
+                const tDate = new Date(t.date + 'T12:00:00');
+                const wallet = wallets.find(w => w.id === t.walletId);
+                
+                if (t.status === 'pago' && wallet?.type !== 'Crédito') {
+                    t.type === 'entrada' ? saldo += t.value : saldo -= t.value;
+                }
+                if (wallet?.type === 'Crédito' && tDate.getMonth() === today.getMonth()) {
+                    fatura += t.value;
+                }
+            });
+
+            document.getElementById('stat-saldo').innerText = formatCurrency(saldo);
+            document.getElementById('stat-fatura').innerText = formatCurrency(fatura);
+            document.getElementById('stat-projetado').innerText = formatCurrency(saldo - fatura);
+        }
+
+        function renderTransactionList() {
+            const list = document.getElementById('transactionsList');
+            const filtered = filterTransactions(transactions);
+            
+            list.innerHTML = filtered.length ? filtered.map(t => createItemHTML(t)).join('') : '<div class="p-12 text-center text-slate-400">Sem resultados</div>';
+        }
+
+        function renderRecentList() {
+            const list = document.getElementById('recentTransactionsList');
+            const sorted = [...transactions].sort((a,b) => new Date(b.date) - new Date(a.date)).slice(0, 5);
+            list.innerHTML = sorted.map(t => createItemHTML(t, true)).join('');
+        }
+
+        function createItemHTML(t, isRecent = false) {
+            const tDate = new Date(t.date + 'T12:00:00');
+            const isFuture = tDate > new Date();
+            return `
+                <div class="p-4 flex items-center gap-4 group">
+                    <div class="p-3 rounded-xl ${t.type === 'entrada' ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'}">
+                        <i data-lucide="${t.paymentMethod === 'Crédito' ? 'credit-card' : (t.type === 'entrada' ? 'trending-up' : 'trending-down')}" class="w-5 h-5"></i>
+                    </div>
+                    <div class="flex-1 min-w-0">
+                        <h5 class="font-bold text-slate-800 text-sm truncate">${t.description}</h5>
+                        <p class="text-[10px] text-slate-400 font-black uppercase">${tDate.toLocaleDateString('pt-PT')} | ${t.paymentMethod}</p>
+                    </div>
+                    <div class="text-right flex items-center gap-3">
+                        <span class="font-black text-sm">${formatCurrency(t.value)}</span>
+                        <button onclick="toggleStatus('${t.id}', '${t.status}')" class="${t.status === 'pago' ? 'text-emerald-500' : 'text-slate-300'}">
+                            <i data-lucide="check-circle-2" class="w-6 h-6"></i>
+                        </button>
+                        ${!isRecent ? `<button onclick="deleteTransaction('${t.id}')" class="text-slate-300 hover:text-rose-500 opacity-0 group-hover:opacity-100 transition-all"><i data-lucide="trash-2" class="w-4 h-4"></i></button>` : ''}
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderWallets() {
+            const list = document.getElementById('walletList');
+            list.innerHTML = wallets.map(w => `
+                <div class="flex justify-between items-center p-4 border border-slate-100 rounded-xl bg-slate-50/30">
+                    <span class="font-bold text-slate-700 text-sm">${w.name} <span class="text-[10px] text-slate-300 ml-2 uppercase">${w.type}</span></span>
+                    <button onclick="deleteWallet('${w.id}')" class="text-slate-300 hover:text-rose-500"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+                </div>
+            `).join('');
+            lucide.createIcons();
+        }
+
+        function updateSelects() {
+            const wSelect = document.getElementById('formWallet');
+            const fwSelect = document.getElementById('filterWallet');
+            const options = wallets.map(w => `<option value="${w.id}">${w.name}</option>`).join('');
+            
+            wSelect.innerHTML = `<option value="">Escolha...</option>` + options;
+            fwSelect.innerHTML = `<option value="todas">Todas</option>` + options;
+        }
+
+        // --- FILTERS ---
+        function filterTransactions(data) {
+            const method = document.getElementById('filterMethod').value;
+            const walletId = document.getElementById('filterWallet').value;
+            const period = document.getElementById('filterPeriod').value;
+            const search = document.getElementById('searchInput').value.toLowerCase();
+            const start = document.getElementById('filterStartDate').value;
+            const end = document.getElementById('filterEndDate').value;
+
+            return data.filter(t => {
+                if (search && !t.description.toLowerCase().includes(search)) return false;
+                if (method !== 'todos' && t.paymentMethod !== method) return false;
+                if (walletId !== 'todas' && t.walletId !== walletId) return false;
+
+                const tDate = new Date(t.date + 'T12:00:00');
+                const today = new Date();
+                
+                if (period === 'hoje' && tDate.toDateString() !== today.toDateString()) return false;
+                if (period === '7dias' && (today - tDate) / 86400000 > 7) return false;
+                if (period === 'mes_atual' && (tDate.getMonth() !== today.getMonth() || tDate.getFullYear() !== today.getFullYear())) return false;
+                if (period === 'personalizado' && start && end) {
+                    if (t.date < start || t.date > end) return false;
+                }
+
+                return true;
+            }).sort((a,b) => new Date(b.date) - new Date(a.date));
+        }
+
+        // --- ACTIONS ---
+        window.saveTransaction = async function() {
+            const desc = document.getElementById('formDesc').value;
+            const val = parseFloat(document.getElementById('formValue').value);
+            const date = document.getElementById('formDate').value;
+            const wallet = document.getElementById('formWallet').value;
+            const inst = parseInt(document.getElementById('formInstallments').value) || 1;
+            const method = document.getElementById('formMethod').value;
+
+            if (!desc || !val || !date || !wallet) return alert("Preencha tudo");
+
+            for (let i = 0; i < inst; i++) {
+                let d = new Date(date + 'T12:00:00');
+                d.setMonth(d.getMonth() + i);
+                
+                await addDoc(collection(db, `artifacts/${appId}/public/data/transactions`), {
+                    description: desc + (inst > 1 ? ` (${i+1}/${inst})` : ''),
+                    value: val / inst,
+                    date: d.toISOString().split('T')[0],
+                    walletId: wallet,
+                    paymentMethod: method,
+                    type: formType,
+                    status: 'pendente',
+                    createdAt: new Date().toISOString()
+                });
+            }
+            closeModal();
+        };
+
+        window.toggleStatus = async (id, current) => {
+            await updateDoc(doc(db, `artifacts/${appId}/public/data/transactions`, id), {
+                status: current === 'pago' ? 'pendente' : 'pago'
+            });
+        };
+
+        window.deleteTransaction = async (id) => {
+            if (confirm("Apagar transação?")) await deleteDoc(doc(db, `artifacts/${appId}/public/data/transactions`, id));
+        };
+
+        window.addWallet = async () => {
+            const name = document.getElementById('walletName').value;
+            const type = document.getElementById('walletType').value;
+            if (!name) return;
+            await addDoc(collection(db, `artifacts/${appId}/public/data/wallets`), { name, type, initialBalance: 0 });
+            document.getElementById('walletName').value = '';
+        };
+
+        window.deleteWallet = async (id) => {
+            await deleteDoc(doc(db, `artifacts/${appId}/public/data/wallets`, id));
+        };
+
+        // --- UTILS & UI ---
+        window.formatCurrency = (v) => new Intl.NumberFormat('pt-PT', { style: 'currency', currency: 'EUR' }).format(v);
+        
+        window.setTab = (tab) => {
+            document.getElementById('view-dashboard').classList.add('hidden');
+            document.getElementById('view-extrato').classList.add('hidden');
+            document.getElementById('view-config').classList.add('hidden');
+            document.getElementById('view-' + tab).classList.remove('hidden');
+            
+            document.querySelectorAll('nav button').forEach(b => {
+                b.classList.remove('tab-active');
+                b.classList.add('tab-inactive');
+            });
+            document.getElementById('nav-' + tab).classList.add('tab-active');
+            lucide.createIcons();
+        };
+
+        window.toggleFilters = () => document.getElementById('filterBar').classList.toggle('hidden');
+        window.togglePeriodInputs = () => {
+            const p = document.getElementById('filterPeriod').value;
+            document.getElementById('periodInputs').classList.toggle('hidden', p !== 'personalizado');
+            updateFilters();
+        };
+        window.updateFilters = () => render();
+        window.resetFilters = () => {
+            document.getElementById('filterMethod').value = 'todos';
+            document.getElementById('filterPeriod').value = 'mes_atual';
+            document.getElementById('filterWallet').value = 'todas';
+            document.getElementById('searchInput').value = '';
+            togglePeriodInputs();
+        };
+
+        window.setFormType = (t) => {
+            formType = t;
+            document.getElementById('typeSaida').className = t === 'saida' ? 'py-2 rounded-lg font-bold text-sm bg-white text-rose-600 shadow-sm' : 'py-2 rounded-lg font-bold text-sm text-slate-500';
+            document.getElementById('typeEntrada').className = t === 'entrada' ? 'py-2 rounded-lg font-bold text-sm bg-white text-emerald-600 shadow-sm' : 'py-2 rounded-lg font-bold text-sm text-slate-500';
+        };
+
+        window.openModal = () => document.getElementById('modalTransaction').classList.remove('hidden');
+        window.closeModal = () => document.getElementById('modalTransaction').classList.add('hidden');
+        window.openImportModal = () => {
+            importData = [];
+            document.getElementById('importContainer').innerHTML = `<div class="border-2 border-dashed border-slate-200 rounded-3xl p-12 text-center">
+                <i data-lucide="file-text" class="mx-auto text-slate-200 mb-4 w-12 h-12"></i>
+                <p class="text-sm font-bold text-slate-500 mb-4">Selecione o CSV do seu banco</p>
+                <label class="bg-indigo-600 text-white px-6 py-3 rounded-xl font-bold text-sm cursor-pointer">
+                    Procurar Arquivo
+                    <input type="file" id="csvFileInput" accept=".csv" class="hidden" onchange="handleFileSelect(event)">
+                </label>
+            </div>`;
+            document.getElementById('importFooter').classList.add('hidden');
+            document.getElementById('modalImport').classList.remove('hidden');
+            lucide.createIcons();
+        };
+        window.closeImportModal = () => document.getElementById('modalImport').classList.add('hidden');
+
+        // --- CSV LOGIC ---
+        window.exportToCSV = () => {
+            const data = filterTransactions(transactions);
+            const csv = ["Data;Descrição;Valor;Método", ...data.map(t => `${t.date};${t.description};${t.value.toFixed(2)};${t.paymentMethod}`)].join('\n');
+            const blob = new Blob(["\ufeff" + csv], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement("a");
+            link.href = URL.createObjectURL(blob);
+            link.download = "extrato.csv";
+            link.click();
+        };
+
+        window.handleFileSelect = (e) => {
+            const file = e.target.files[0];
+            const reader = new FileReader();
+            reader.onload = (evt) => {
+                const lines = evt.target.result.split('\n').slice(1);
+                importData = lines.map((l, idx) => {
+                    const cols = l.split(/[;,]/);
+                    if (cols.length < 3) return null;
+                    let d = cols[0].trim();
+                    if (d.includes('/')) {
+                        const [dia, mes, ano] = d.split('/');
+                        d = `${ano}-${mes.padStart(2,'0')}-${dia.padStart(2,'0')}`;
+                    }
+                    return { id: idx, date: d, description: cols[1], value: parseFloat(cols[2].replace(',','.')) };
+                }).filter(Boolean);
+                renderImportPreview();
+            };
+            reader.readAsText(file);
+        };
+
+        function renderImportPreview() {
+            const container = document.getElementById('importContainer');
+            container.innerHTML = `<div class="space-y-4">` + importData.map(item => `
+                <div class="p-4 bg-slate-50 rounded-2xl border border-slate-100 flex flex-wrap gap-3 items-center">
+                    <input type="date" class="bg-white border p-2 rounded-lg text-xs font-bold" value="${item.date}" onchange="updateImportItem(${item.id}, 'date', this.value)">
+                    <input class="flex-1 bg-white border p-2 rounded-lg text-xs font-bold min-w-[150px]" value="${item.description}" onchange="updateImportItem(${item.id}, 'description', this.value)">
+                    <input type="number" class="w-24 bg-white border p-2 rounded-lg text-xs font-black" value="${item.value}" onchange="updateImportItem(${item.id}, 'value', this.value)">
+                    <button onclick="removeImportItem(${item.id})" class="text-rose-400 p-2"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+                </div>
+            `).join('') + `</div>`;
+            document.getElementById('importCount').innerText = `${importData.length} itens`;
+            document.getElementById('importFooter').classList.remove('hidden');
+            lucide.createIcons();
+        }
+
+        window.updateImportItem = (id, field, val) => {
+            const item = importData.find(i => i.id === id);
+            if (item) item[field] = field === 'value' ? parseFloat(val) : val;
+        };
+
+        window.removeImportItem = (id) => {
+            importData = importData.filter(i => i.id !== id);
+            renderImportPreview();
+        };
+
+        window.saveImport = async () => {
+            const walletId = wallets[0]?.id;
+            if (!walletId) return alert("Crie uma carteira primeiro");
+            for (const item of importData) {
+                await addDoc(collection(db, `artifacts/${appId}/public/data/transactions`), {
+                    ...item,
+                    walletId,
+                    paymentMethod: 'Débito',
+                    type: 'saida',
+                    status: 'pendente',
+                    createdAt: new Date().toISOString()
+                });
+            }
+            closeImportModal();
+        };
+
+        document.getElementById('searchInput').addEventListener('input', render);
+
+        // Bootstrap
+        window.onload = () => {
+            init();
+            lucide.createIcons();
+        };
+    </script>
+</body>
+</html>
